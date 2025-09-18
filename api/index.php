@@ -24,8 +24,8 @@ class JsonStorageAPI
     public function __construct()
     {
         try {
-            $dbname     = getenv('DB_URL');
-            $authToken  = getenv('DB_AUTH_TOKEN');
+            $dbname = getenv('DB_URL');
+            $authToken = getenv('DB_AUTH_TOKEN');
 
             $this->db = new LibSQL("dbname=$dbname&authToken=$authToken");
             $this->db->execute("CREATE TABLE IF NOT EXISTS json_data (
@@ -41,7 +41,8 @@ class JsonStorageAPI
 
     private function isProduction(): bool
     {
-        return isset($_SERVER['APP_ENV']) && $_SERVER['APP_ENV'] === 'production';
+        $requestData = $this->getRequestBody();
+        return (isset($_SERVER['APP_ENV']) && $_SERVER['APP_ENV'] === 'production') || ((isset($requestData) && !isset($requestData['source'])) || (isset($requestData['source']) && $requestData['source'] === 'GitHub Actions'));
     }
 
     public function handleRequest()
