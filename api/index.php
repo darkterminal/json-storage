@@ -39,6 +39,11 @@ class JsonStorageAPI
         }
     }
 
+    private function isProduction(): bool
+    {
+        return isset($_SERVER['APP_ENV']) && $_SERVER['APP_ENV'] === 'production';
+    }
+
     public function handleRequest()
     {
         $method = $_SERVER['REQUEST_METHOD'];
@@ -66,10 +71,18 @@ class JsonStorageAPI
                 break;
 
             case 'POST':
+                if ($this->isProduction()) {
+                    $this->sendError(403, 'POST method is disabled in production');
+                }
+
                 $this->createRecord();
                 break;
 
             case 'PUT':
+                if ($this->isProduction()) {
+                    $this->sendError(403, 'PUT method is disabled in production');
+                }
+
                 if ($id) {
                     $this->updateRecord($id);
                 } else {
@@ -78,6 +91,10 @@ class JsonStorageAPI
                 break;
 
             case 'DELETE':
+                if ($this->isProduction()) {
+                    $this->sendError(403, 'DELETE method is disabled in production');
+                }
+
                 if ($id) {
                     $this->deleteRecord($id);
                 } else {
