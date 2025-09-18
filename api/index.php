@@ -1,4 +1,9 @@
 <?php
+
+use Darkterminal\TursoHttp\LibSQL;
+
+require __DIR__ . '/../vendor/autoload.php';
+
 // Enable CORS for all origins (you can restrict this in production)
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
@@ -19,9 +24,11 @@ class JsonStorageAPI
     public function __construct()
     {
         try {
-            // Use /tmp directory for SQLite database on Vercel
-            $this->db = new SQLite3('/tmp/json_storage.db');
-            $this->db->exec("CREATE TABLE IF NOT EXISTS json_data (
+            $dbname     = getenv('DB_URL');
+            $authToken  = getenv('DB_AUTH_TOKEN');
+
+            $this->db = new LibSQL("dbname=$dbname&authToken=$authToken");
+            $this->db->execute("CREATE TABLE IF NOT EXISTS json_data (
                 id TEXT PRIMARY KEY,
                 data TEXT NOT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -112,15 +119,21 @@ class JsonStorageAPI
     private function listRecords()
     {
         try {
-            $stmt = $this->db->prepare("SELECT id, created_at, updated_at FROM json_data ORDER BY updated_at DESC");
-            $result = $stmt->execute();
+            $result = $this->db->query("SELECT id, created_at, updated_at FROM json_data ORDER BY updated_at DESC");
+            $rows = $result->fetchArray(LibSQL::LIBSQL_ASSOC);
 
-            $records = [];
-            while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
-                $records[] = $row;
+            if (!$rows) {
+                $this->sendError(404, 'No records found');
+                return;
             }
 
-            $this->sendResponse($records);
+            $data = array_map(fn($row) => [
+                'id' => $row['id'],
+                'created_at' => $row['created_at'],
+                'updated_at' => $row['updated_at']
+            ], $rows);
+
+            $this->sendResponse($data);
         } catch (Exception $e) {
             $this->sendError(500, 'Failed to list records: ' . $e->getMessage());
         }
@@ -130,10 +143,8 @@ class JsonStorageAPI
     private function getRecord($id)
     {
         try {
-            $stmt = $this->db->prepare("SELECT id, data, created_at, updated_at FROM json_data WHERE id = :id");
-            $stmt->bindValue(':id', $id, SQLITE3_TEXT);
-            $result = $stmt->execute();
-            $record = $result->fetchArray(SQLITE3_ASSOC);
+            $query = $this->db->query("SELECT id, data, created_at, updated_at FROM json_data WHERE id = ?", [$id]);
+            $record = $query->fetchArray(LibSQL::LIBSQL_ASSOC);
 
             if (!$record) {
                 $this->sendError(404, 'Record not found');
@@ -141,8 +152,9 @@ class JsonStorageAPI
             }
 
             // Parse JSON data
-            $record['data'] = json_decode($record['data'], true);
-            $this->sendResponse($record);
+            $result = array_shift($record);
+            $response['data'] = json_decode($result['data'], true);
+            $this->sendResponse($response);
         } catch (Exception $e) {
             $this->sendError(500, 'Failed to retrieve record: ' . $e->getMessage());
         }
@@ -162,11 +174,9 @@ class JsonStorageAPI
             $id = $this->generateId();
             $jsonData = json_encode($requestData['data']);
 
-            $stmt = $this->db->prepare("INSERT INTO json_data (id, data) VALUES (:id, :data)");
-            $stmt->bindValue(':id', $id, SQLITE3_TEXT);
-            $stmt->bindValue(':data', $jsonData, SQLITE3_TEXT);
+            $stmt = $this->db->execute("INSERT INTO json_data (id, data) VALUES (?, ?)", [$id, $jsonData]);
 
-            if (!$stmt->execute()) {
+            if (!$stmt) {
                 $this->sendError(500, 'Failed to create record');
                 return;
             }
@@ -190,22 +200,17 @@ class JsonStorageAPI
             }
 
             // Check if record exists
-            $checkStmt = $this->db->prepare("SELECT id FROM json_data WHERE id = :id");
-            $checkStmt->bindValue(':id', $id, SQLITE3_TEXT);
-            $result = $checkStmt->execute();
-
-            if (!$result->fetchArray(SQLITE3_ASSOC)) {
+            $checkStmt = $this->db->query("SELECT id FROM json_data WHERE id = ?", [$id]);
+            if (!$checkStmt->fetchArray(LibSQL::LIBSQL_ASSOC)) {
                 $this->sendError(404, 'Record not found');
                 return;
             }
 
             $jsonData = json_encode($requestData['data']);
 
-            $stmt = $this->db->prepare("UPDATE json_data SET data = :data, updated_at = datetime('now') WHERE id = :id");
-            $stmt->bindValue(':id', $id, SQLITE3_TEXT);
-            $stmt->bindValue(':data', $jsonData, SQLITE3_TEXT);
+            $stmt = $this->db->execute("UPDATE json_data SET data = ?, updated_at = datetime('now') WHERE id = ?", [$jsonData, $id]);
 
-            if (!$stmt->execute()) {
+            if (!$stmt) {
                 $this->sendError(500, 'Failed to update record');
                 return;
             }
@@ -221,10 +226,7 @@ class JsonStorageAPI
     private function deleteRecord($id)
     {
         try {
-            $stmt = $this->db->prepare("DELETE FROM json_data WHERE id = :id");
-            $stmt->bindValue(':id', $id, SQLITE3_TEXT);
-
-            $result = $stmt->execute();
+            $this->db->execute("DELETE FROM json_data WHERE id = ?", [$id]);
 
             if ($this->db->changes() === 0) {
                 $this->sendError(404, 'Record not found');

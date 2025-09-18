@@ -1,5 +1,6 @@
 {
   "require": {
-    "php": ">=8.3"
+    "php": ">=8.3",
+    "darkterminal/turso-client-http": "^2.9"
   }
 }
