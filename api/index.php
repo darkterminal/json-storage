@@ -41,8 +41,7 @@ class JsonStorageAPI
 
     private function isProduction(): bool
     {
-        $requestData = $this->getRequestBody();
-        return (isset($_SERVER['APP_ENV']) && $_SERVER['APP_ENV'] === 'production') || ((isset($requestData) && !isset($requestData['source'])) || (isset($requestData['source']) && $requestData['source'] === 'GitHub Actions'));
+        return getenv('APP_ENV') === 'production' && $_SERVER['HTTP_USER_AGENT'] === 'GitHub Actions';
     }
 
     public function handleRequest()
@@ -224,7 +223,7 @@ class JsonStorageAPI
                 return;
             }
 
-            $jsonData = json_encode($requestData['data']);
+            $jsonData = $requestData['data'];
 
             $stmt = $this->db->execute("UPDATE json_data SET data = ?, updated_at = datetime('now') WHERE id = ?", [$jsonData, $id]);
 
